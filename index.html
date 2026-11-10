@@ -103,7 +103,7 @@
   /* 2. Módosítások */
   .s2 { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
   .opts { display: grid; gap: 12px; }
-  .opt { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 8px 16px; align-items: start; border-left: 4px solid transparent; }
+  .opt { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 8px 16px; align-items: start; border-left: 4px solid transparent; }
   .opt.on { border-left-color: var(--accent); }
   .opt h3 { font-size: 16px; font-weight: 600; }
   .opt .why { font-size: 13px; color: var(--muted); margin-top: 2px; }
@@ -299,7 +299,13 @@
     body { background: #fff; }
     #app { display: none !important; }
     #print-area { display: block !important; }
-    .sheet { box-shadow: none; width: auto; min-height: 0; max-width: none; }
+    .sheet { box-shadow: none; width: auto; min-height: 0; max-width: none; font-size: 10.5px; line-height: 1.35; padding-bottom: 8mm; }
+    .sheet .lh { margin-bottom: 12px; }
+    .sheet h1 { font-size: 17px; }
+    .sheet h2 { margin: 10px 0 4px; font-size: 11px; }
+    .sheet td { padding: 3px 0; }
+    .sheet tr.g td { font-size: 14px; padding-top: 6px; }
+    .sheet .foot { margin-top: 10px; }
     .sheet tr, .sheet li { break-inside: avoid; }
     .print-budget { padding: 10mm 10mm; font-size: 9.5px; }
     .print-budget table { width: 100%; border-collapse: collapse; }
@@ -330,7 +336,7 @@
   <main id="screen"></main>
 </div>
 <div id="print-area"></div>
-<script src="data.js"></script>
-<script src="app.js"></script>
+<script src="data.js?v=2"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>

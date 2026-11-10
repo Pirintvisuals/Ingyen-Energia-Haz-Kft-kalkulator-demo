@@ -301,7 +301,7 @@ window.DATA = {
       ["10", "h_vakolat", 42, "Garázs: színezett vékonyvakolat"],
       ["12", "el_garvill", 1],
       ["13", "b_garpadlo", 21],
-      ["01", "gar_kieg1", 1]
+      ["06", "gar_kieg1", 1]
     ]},
     garage2: { tag: "Garázs, 2 állásos", add: [
       ["02", "e_sav", 20, "Garázs: sávalap-árok gépi kiemelése"],
@@ -318,7 +318,7 @@ window.DATA = {
       ["12", "el_garvill", 1],
       ["12", "el_kapuvill", 1],
       ["13", "b_garpadlo", 38],
-      ["01", "gar_kieg2", 1]
+      ["06", "gar_kieg2", 1]
     ], change: [["el_aramkor", 1]],
       deps: ["2 állásos kapu: motoros nyitás villamos előkészítése", "+1 áramkör a főelosztóban"] },
 

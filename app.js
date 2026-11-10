@@ -104,7 +104,7 @@
         else { var v = mkRow(P, BASE_CH[c[0]], c[0], c[1], D.items[c[0]].n + " – többlet", "added", pkg.tag, g); v.key = "x:" + c[0]; rows.push(v); }
       });
       (pkg.add || []).forEach(function (a) {
-        var r = mkRow(P, a[0], a[1], a[2], a[3], "added", pkg.tag, g); r.key = "p:" + a[1] + ":" + r.name; rows.push(r);
+        var r = mkRow(P, a[0], a[1], a[2], a[3], "added", pkg.tag, g); r.key = "p:" + r.name; rows.push(r);
       });
       if (ap.minus) (ap.minus.add || []).forEach(function (a) {
         var r = mkRow(P, a[0], a[1], a[2], a[3], "removed", "Az alapár 1 állásos garázsa", g); r.key = "m:" + a[1] + ":" + r.name; r.virtual = true; rows.push(r);
@@ -224,7 +224,11 @@
   function hasOverrides() { return Object.keys(state.prices).length > 0; }
 
   // ---------- közös HTML darabok ----------
-  function offerLabel(o) { return o.customer + " – " + typeName(o.type) + ", " + o.variant + " · v" + o.version; }
+  function offerLabel(o) {
+    var base = o.customer + " – " + typeName(o.type) + ", " + o.variant + " · v" + o.version;
+    var dup = state.offers.some(function (x) { return x !== o && x.customer === o.customer && x.version === o.version && x.ref !== o.ref; });
+    return dup ? base + " (" + o.ref + ")" : base;
+  }
 
   function renderTop() {
     var sel = document.getElementById("offerSel");
@@ -430,10 +434,11 @@
     var qty = r.qtyOld != null ? '<span class="old">' + fDec(r.qtyOld) + "</span>" + fDec(r.qty) : fDec(r.qty);
     var tag = r.tag ? '<span class="tag">' + (r.status === "removed" ? "kiesik: " : r.status === "changed" ? "módosul: " : "") + esc(r.tag) + "</span>" : "";
     var nm = r.noMarkup ? '<span class="tag nm">' + (r.custom ? "kézi ár" : "átadott ár") + "</span>" : "";
-    var how = r.how ? ' <button class="linkbtn" data-act="how">' + (state.howOpen ? "elrejt" : "Hogyan számolja?") + "</button>" + (state.howOpen ? tileExplain(cur()) : "") : "";
+    var how = r.how ? ' <button class="linkbtn" data-act="how">' + (state.howOpen ? "elrejt" : "Hogyan számolja?") + "</button>" : "";
     return '<tr class="' + cls + '"><td class="tsz">' + r.tsz + '</td><td class="nm"><span class="t">' + esc(r.name) + "</span>" + tag + nm + how + "</td>" +
       '<td class="num">' + qty + "</td><td>" + esc(r.unit) + '</td><td class="num">' + fPrice(r.a) + '</td><td class="num">' + fPrice(r.d) + "</td>" +
-      '<td class="num">' + fAmt(r.matT) + '</td><td class="num">' + fAmt(r.labT) + "</td></tr>";
+      '<td class="num">' + fAmt(r.matT) + '</td><td class="num">' + fAmt(r.labT) + "</td></tr>" +
+      (r.how && state.howOpen ? '<tr class="' + cls + '"><td></td><td colspan="7">' + tileExplain(cur()) + "</td></tr>" : "");
   }
 
   function screenKv() {
@@ -479,7 +484,7 @@
       '<span><i style="background:var(--chg-bg);border-color:var(--chg-bd)"></i>módosult mennyiség: régi → új</span></div>' +
       '<div class="tablewrap"><table class="bt"><thead><tr><th>Tételszám</th><th>Megnevezés</th><th class="num">Menny.</th><th>Egység</th>' +
       '<th class="num">Anyag egységár</th><th class="num">Díj egységár</th><th class="num">Anyag összesen</th><th class="num">Díj összesen</th></tr></thead>' +
-      "<tbody>" + body + "</tbody>" +
+      "<tbody>" + (body || '<tr><td></td><td colspan="7" class="muted" style="padding:18px 10px">Nincs módosítás: az ajánlat a típus közölt alapárával számol (' + fFt(b.base) + ").</td></tr>") + "</tbody>" +
       '<tfoot><tr><td></td><td colspan="5">Összesen' + (b.detailed ? "" : " (csak a módosítások)") + '</td><td class="num">' + fInt(b.mat + b.N) + '</td><td class="num">' + fInt(b.lab) + "</td></tr></tfoot></table></div>" +
       '<div class="totals"><div class="openbox"><h3>Nyitott tételek</h3><p class="sub">Még nem árazhatók. Nem szerepelnek az összegben, az ajánlaton szövegként jelennek meg.</p><ul>' +
       opens.map(function (x) { return "<li><b>" + esc(x.label) + ":</b> " + esc(x.text) + "</li>"; }).join("") + "</ul></div>" +
@@ -555,7 +560,7 @@
       '<tr class="t"><td>Bruttó összesen</td><td class="num">' + fFt(b.gross) + "</td></tr>";
     return '<div class="sheet"><div class="lh"><img src="logo.png" alt="' + esc(D.company.name) + '"><div class="r"><b>Előzetes ajánlat</b>' + esc(o.ref) + " · " + o.version + ". verzió<br>" + fDate(o.date) + "</div></div>" +
       "<h1>Tisztelt " + esc(o.customer) + "!</h1>" +
-      '<p style="margin:4px 0 0">Köszönjük megkeresését. Az ajánlat a(z) ' + typeName(o.type) + " típusház kulcsrakész műszaki leírására és az Ön által kért módosításokra épül.</p>" +
+      '<p style="margin:4px 0 0">Köszönjük megkeresését. Az ajánlat a ' + typeName(o.type) + " típusház kulcsrakész műszaki leírására és az Ön által kért módosításokra épül.</p>" +
       "<h2>A ház</h2><div>" + typeName(o.type) + " típusház, " + esc(o.variant) + " kivitel · " + fDec(h.net) + " m² nettó, " + fDec(h.gross) + " m² bruttó alapterület" +
       (h.terrace ? " · terasz " + fDec(h.terrace) + " m²" : "") + " · " + h.rooms + " szoba · " + esc(h.baths) +
       (h.garage !== "none" ? " · " + GARAGE_LBL[h.garage] + " garázs" : "") + (o.location ? " · Helyszín: " + esc(o.location) : "") + "</div>" +
@@ -564,7 +569,7 @@
       "<div><h2>Még nyitott kérdések</h2><ul>" + opens.map(function (x2) { return "<li><b>" + esc(x2.label) + ":</b> " + esc(x2.text) + "</li>"; }).join("") +
       '</ul><div class="d" style="margin-top:4px">Ezek nem szerepelnek a fenti összegben.</div>' +
       (x.heat === "hp" ? '<div class="d" style="margin-top:4px">Hőszivattyú mellett gázbekötés és belső gázterv nem szükséges.</div>' : "") + "</div></div>" +
-      "<h2>Érvényesség</h2><div>Az ajánlat " + fDate(addDays(o.date, D.validityDays)) + "-ig érvényes, a kulcsrakész műszaki leírással együtt. Az árak nettó árak, a végösszeg ÁFA-val értendő.</div>" +
+      "<h2>Érvényesség</h2><div>Az ajánlat " + fDate(addDays(o.date, D.validityDays)).replace(/\.$/, "") + "-ig érvényes, a kulcsrakész műszaki leírással együtt. Az árak nettó árak, a végösszeg ÁFA-val értendő.</div>" +
       '<div class="foot">' + esc(D.company.name) + " · " + esc(D.company.city) + "</div></div>";
   }
 
