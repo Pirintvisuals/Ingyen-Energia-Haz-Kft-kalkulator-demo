@@ -16,6 +16,8 @@
 //     közvetlen költség 67 120 000 + rezsi 12% + haszon 13% = pontosan 83 900 000 Ft (a közölt ár)
 //   - a rezsi és haszon %
 //   - a módosítási csomagok sorai és árai (packages)
+//   - a helyszíni felmérés tételei és árai ("sv_" tételek, survey) – feltöltés, bontás, fa, daru,
+//     lemezalap, talajcsere, talajvíz, közműbekötések, 3 fázis bővítés; a sample felmérések (offers[].survey)
 //   - a mentett ajánlatok (offers) és az ügyfélnevek (kitalált minták)
 //
 // Minden ár NETTÓ forint, kivéve ahol a leírás bruttó keretet ad meg.
@@ -64,9 +66,10 @@ window.DATA = {
   },
 
   // Nem része a kulcsrakész árnak (VALÓS, a leírásokból).
+  // except: ha a felmérésen a cég "Vállaljuk" jelölést kap, az ajánlat ezt a kivételt külön kiírja – a szöveg sosem tűnik el.
   excluded: [
-    { id: "kozmu",   text: "Közművek behozatala a telekhatárig, mérőórák kiépítése" },
-    { id: "bekotes", text: "Víz, szennyvíz, gáz és villany bekötése a mérőóráktól a házig" },
+    { id: "kozmu",   text: "Közművek behozatala a telekhatárig, mérőórák kiépítése", except: ["bovites"] },
+    { id: "bekotes", text: "Víz, szennyvíz, gáz és villany bekötése a mérőóráktól a házig", except: ["viz", "csatorna", "villany", "gaz"] },
     { id: "gazterv", text: "Belső gázterv elkészíttetése, engedélyeztetése és rákötése", dropIf: "hp" },
     { id: "terv",    text: "Tervezési költség (a tervdokumentációt a cég készíti)" },
     { id: "terasz",  text: "Teraszok és külső lépcsők burkolása" },
@@ -83,7 +86,8 @@ window.DATA = {
     ["07", "Nyílászárók"], ["08", "Szárazépítés (gipszkarton)"], ["09", "Vakolás"],
     ["10", "Hőszigetelés és homlokzat"], ["11", "Gépészet (víz, csatorna, fűtés)"], ["12", "Villanyszerelés"],
     ["13", "Aljzat és burkolatok"], ["14", "Festés"], ["15", "Szaniterek"],
-    ["16", "Napelem, klíma-előkészítés"], ["17", "Takarítás, átadás"], ["18", "Egyedi tételek"]
+    ["16", "Napelem, klíma-előkészítés"], ["17", "Takarítás, átadás"],
+    ["18", "Közműbekötések (csak vállalás esetén)"], ["19", "Egyedi tételek"]
   ],
 
   // ÁRLISTA – MINDEN ÁR MINTAÁR. id: { g: csoport, n: megnevezés, u: egység, a: anyag Ft/egység, d: díj Ft/egység }
@@ -208,7 +212,7 @@ window.DATA = {
     el_gyenge: { g: "Villanyszerelés", n: "Gyengeáram: TV, internet, csengő előkészítése", u: "klt", a: 86300, d: 73000 },
     el_meres: { g: "Villanyszerelés", n: "Érintésvédelmi mérés, villamos átadási dokumentáció", u: "klt", a: 19900, d: 112800 },
     el_kulter: { g: "Villanyszerelés", n: "Kültéri dugalj és lámpakiállás", u: "db", a: 8000, d: 5300 },
-    el_3fazis: { g: "Villanyszerelés", n: "Betáplálás bővítése 3 fázisra (mérőhely, elosztó)", u: "klt", a: 145000, d: 75000 },
+    el_3fazis: { g: "Villanyszerelés", n: "Belső elosztó átalakítása 3 fázisra, hőszivattyú-védelmek", u: "klt", a: 145000, d: 75000 },
     el_hpbekot: { g: "Villanyszerelés", n: "Hőszivattyú villamos bekötése, külön áramkör, védelem", u: "klt", a: 38000, d: 42000 },
     el_garvill: { g: "Villanyszerelés", n: "Garázs világítás és dugalj áramkör", u: "klt", a: 65000, d: 75000 },
     el_kapuvill: { g: "Villanyszerelés", n: "Szekcionált kapu motoros nyitásának villamos előkészítése", u: "klt", a: 28000, d: 34000 },
@@ -242,6 +246,26 @@ window.DATA = {
     // Garázs
     gar_kieg1: { g: "Garázs", n: "Garázs csatlakozása a házhoz: dilatáció, bádogozás, kiegészítő munkák", u: "klt", a: 0, d: 438000 },
     gar_kieg2: { g: "Garázs", n: "Garázs csatlakozása a házhoz: dilatáció, bádogozás, kiegészítő munkák", u: "klt", a: 0, d: 712600 },
+    // Felmérés: telek, talaj (MINTAÁR) – a helyszíni felmérés válaszai ezekből a tételekből lesznek sorok
+    sv_lejto_e: { g: "Felmérés: telek, talaj", n: "Enyhe lejtő: tükörképzés, földmunka-többlet", u: "klt", a: 0, d: 280000 },
+    sv_lejto_l: { g: "Felmérés: telek, talaj", n: "Lejtős telek: földmunka-többlet, rézsűképzés", u: "klt", a: 0, d: 640000 },
+    sv_labazat: { g: "Felmérés: telek, talaj", n: "Lejtős telek: lábazat magasítása", u: "fm", a: 6000, d: 4000 },
+    sv_feltoltes: { g: "Felmérés: telek, talaj", n: "Feltöltés, terepszint-emelés, rétegenként tömörítve", u: "m³", a: 7200, d: 4800 },
+    sv_bontas: { g: "Felmérés: telek, talaj", n: "Meglévő épület bontása, törmelék elszállítása", u: "m²", a: 0, d: 14000 },
+    sv_fa: { g: "Felmérés: telek, talaj", n: "Fa kivágása, tuskó kiszedése, elszállítás", u: "db", a: 0, d: 64000 },
+    sv_szuk: { g: "Felmérés: telek, talaj", n: "Szűk bejárás: kézi anyagmozgatás többlete", u: "klt", a: 0, d: 480000 },
+    sv_daru: { g: "Felmérés: telek, talaj", n: "Autódaru bérlete (födém, tetőszerkezet)", u: "nap", a: 0, d: 240000 },
+    sv_szakv: { g: "Felmérés: telek, talaj", n: "Talajmechanikai szakvélemény megrendelése (javasolt)", u: "klt", a: 0, d: 144000 },
+    sv_lemez: { g: "Felmérés: telek, talaj", n: "Lemezalap-többlet a sávalaphoz képest", u: "m²", a: 14000, d: 4000 },
+    sv_csere: { g: "Felmérés: telek, talaj", n: "Talajcsere: kiemelés, kavicsos homok beépítése, tömörítés", u: "m³", a: 9000, d: 7000 },
+    sv_talajviz: { g: "Felmérés: telek, talaj", n: "Talajvíz miatti szigetelés-többlet (nyomó víz elleni lemez)", u: "m²", a: 3200, d: 1800 },
+    // Közműbekötések (MINTAÁR) – csak ha a cég vállalja; a kulcsrakész ár nem tartalmazza
+    sv_viz: { g: "Közműbekötés (vállalás esetén)", n: "Víz bekötővezeték a mérőtől a házig, földben, szerelvényekkel", u: "fm", a: 3800, d: 4200 },
+    sv_csat: { g: "Közműbekötés (vállalás esetén)", n: "Szennyvíz bekötővezeték a házi aknáig, KG 160", u: "fm", a: 5600, d: 6400 },
+    sv_egyedi: { g: "Közműbekötés (vállalás esetén)", n: "Egyedi szennyvízkezelő (házi kisberendezés) telepítése", u: "klt", a: 1350000, d: 450000 },
+    sv_vill: { g: "Közműbekötés (vállalás esetén)", n: "Villamos földkábel a mérőhelytől a házig, védőcsőben", u: "fm", a: 4200, d: 3800 },
+    sv_bovites: { g: "Közműbekötés (vállalás esetén)", n: "Hálózati csatlakozás bővítése 3 fázisra: mérőhely-átalakítás, ügyintézés (szolgáltatói díj nélkül)", u: "klt", a: 95000, d: 85000 },
+    sv_gaz: { g: "Közműbekötés (vállalás esetén)", n: "Gáz bekötővezeték a mérőtől a házig, PE, védőcsőben", u: "fm", a: 4600, d: 5400 },
   },
 
   // A 120-as típus tételes költségvetése (MINTA). [fejezet, árlista-tétel, mennyiség]
@@ -353,10 +377,34 @@ window.DATA = {
     mirror: { tag: "Tükrözött alaprajz", add: [["01", "f_tervmod", 1]] }
   },
 
+  // HELYSZÍNI FELMÉRÉS. Minden ár MINTAÁR (az árlista "sv_" tételei).
+  // A mennyiségek a felmérés válaszaiból jönnek; ahol fix, itt van megadva (120-as mintamennyiség).
+  survey: {
+    labazatFm: 52,      // lejtős telek: lábazat-magasítás hossza (a ház kerülete)
+    lemezM2: 150,       // lemezalap-többlet felülete
+    talajvizM2: 165,    // talajvíz miatti szigetelés felülete (mint az alap szigetelése)
+    // Üres felmérés: ebből indul minden új ajánlat, és ehhez mérjük a felmérés hatását.
+    // utility mode: "vallaljuk" = a cég vállalja (árazott sor) · "ugyfel" = az ügyfél intézi (nincs az árban)
+    // fm: null = a ház úttól mért távolsága (dist) az alapérték
+    defaults: {
+      telepules: "", hrsz: "", terep: "sik", feltoltes: 0, bontas: 0, fa: 0, truck: true, daru: 0,
+      szak: "van", alapozas: "sav", csereM3: 0, talajviz: false,
+      viz: { mode: "ugyfel", fm: null },
+      csatorna: { type: "kozcsat", mode: "ugyfel", fm: null },
+      villany: { phase: "1", bovites: false, mode: "ugyfel", fm: null },
+      gaz: { van: true, mode: "ugyfel", fm: null },
+      dist: 0, megj: "", vegezte: "", datum: ""
+    }
+  },
+
   // Nyitott tételek: nem kerülnek az összegbe. when: mikor jelenik meg.
   openItems: [
-    { id: "alapozas", when: "always", label: "Alapozás",
-      text: "A talajmechanikai szakvélemény után. Fúrt vagy sávalap az alapár része, más alapozás (talajcsere, lemezalap) többletköltség." },
+    { id: "alapozas", when: "noSoilReport", label: "Alapozás",
+      text: "Talajmechanikai szakvélemény még nincs. Az ár sáv- vagy fúrt alappal számol (ez az alapár része); ha a szakvélemény lemezalapot vagy talajcserét ír elő, az többletköltség." },
+    { id: "szennyviz", when: "septic", label: "Egyedi szennyvízkezelés",
+      text: "Engedélyköteles; a végleges megoldás a helyi előírások és a talaj alapján." },
+    { id: "bontas", when: "demolition", label: "Bontás",
+      text: "A bontási bejelentés és az esetleges veszélyes hulladék (pl. azbeszt) a bontás előtti szemle után derül ki." },
     { id: "hp", when: "hp", label: "Hőszivattyú végleges ára",
       text: "A hőszükséglet-számítás és a gépész méretezése után. Az ajánlat átlagos rendszerrel számol." },
     { id: "csempe", when: "tileUnknown", label: "Csempe munkadíj-többlet",
@@ -372,17 +420,38 @@ window.DATA = {
       type: "m120", variant: "Mediterrán", location: "Kiskundorozsma",
       note: "Első ajánlat: gázkazánnal, 1 állásos garázzsal.",
       opts: { garage: "1", heat: "gas", walls: "brick", tilePrice: 14000, tileArea: 40, tileSize: "unknown",
-              winColor: false, hrv: false, roomCtl: false, mirror: false, custom: [] } },
+              winColor: false, hrv: false, roomCtl: false, mirror: false, custom: [] },
+      // Felmérés előtti, első ajánlat: csak a település ismert.
+      survey: { telepules: "Kiskundorozsma", hrsz: "", terep: "sik", feltoltes: 0, bontas: 0, fa: 0, truck: true, daru: 0,
+        szak: "van", alapozas: "sav", csereM3: 0, talajviz: false,
+        viz: { mode: "ugyfel", fm: null }, csatorna: { type: "kozcsat", mode: "ugyfel", fm: null },
+        villany: { phase: "1", bovites: false, mode: "ugyfel", fm: null }, gaz: { van: true, mode: "ugyfel", fm: null },
+        dist: 14, megj: "Felmérés még nem volt; az első ajánlat a levél alapján készült.", vegezte: "", datum: "" } },
     { id: "kovacs-v2", customer: "Kovács Péter", ref: "IEH-2026-041", version: 2, date: "2026-11-07",
       type: "m120", variant: "Mediterrán", location: "Kiskundorozsma",
-      note: "Telefonos egyeztetés után: hőszivattyú, 2 állásos garázs.",
+      note: "Helyszíni felmérés és telefonos egyeztetés után: hőszivattyú, 2 állásos garázs.",
       opts: { garage: "2", heat: "hp", walls: "brick", tilePrice: 14000, tileArea: 40, tileSize: "unknown",
-              winColor: false, hrv: false, roomCtl: false, mirror: false, custom: [] } },
+              winColor: false, hrv: false, roomCtl: false, mirror: false, custom: [] },
+      // Teljes helyszíni felmérés (MINTA).
+      survey: { telepules: "Kiskundorozsma", hrsz: "", terep: "enyhe", feltoltes: 35, bontas: 0, fa: 1, truck: true, daru: 2,
+        szak: "van", alapozas: "sav", csereM3: 0, talajviz: false,
+        viz: { mode: "vallaljuk", fm: null }, csatorna: { type: "kozcsat", mode: "vallaljuk", fm: null },
+        villany: { phase: "3", bovites: true, mode: "vallaljuk", fm: null }, gaz: { van: true, mode: "ugyfel", fm: null },
+        dist: 14,
+        megj: "A telek az utcafronttól hátrafelé enyhén lejt, a hátsó részen kb. 50 cm feltöltés kell. Egy diófa a ház helyén. Víz és csatorna az utcában; villany 1 fázis, a hőszivattyú miatt 3 fázisra bővíteni kell. Teherautóval bejárható, a födémhez és a tetőhöz daru kell.",
+        vegezte: "Műszaki előkészítő", datum: "2026-11-06" } },
     { id: "toth-v1", customer: "Tóth Eszter", ref: "IEH-2026-044", version: 1, date: "2026-11-05",
       type: "m94", variant: "Antracit", location: "Szeged",
       note: "Alap kivitel, módosítás nélkül.",
       opts: { garage: "none", heat: "gas", walls: "gk", tilePrice: 8000, tileArea: 0, tileSize: "ok",
-              winColor: false, hrv: false, roomCtl: false, mirror: false, custom: [] } },
+              winColor: false, hrv: false, roomCtl: false, mirror: false, custom: [] },
+      // Felmérés: nincs talajmechanikai szakvélemény → az alapozás nyitott tétel.
+      survey: { telepules: "Szeged", hrsz: "", terep: "sik", feltoltes: 0, bontas: 0, fa: 0, truck: true, daru: 0,
+        szak: "nincs", alapozas: "sav", csereM3: 0, talajviz: false,
+        viz: { mode: "ugyfel", fm: null }, csatorna: { type: "kozcsat", mode: "ugyfel", fm: null },
+        villany: { phase: "1", bovites: false, mode: "ugyfel", fm: null }, gaz: { van: true, mode: "ugyfel", fm: null },
+        dist: 10, megj: "Sík telek, beépítetlen. Talajmechanikai szakvélemény még nincs, megrendelését javasoltuk.",
+        vegezte: "Műszaki előkészítő", datum: "2026-11-04" } },
     { id: "szabo-v1", customer: "Szabó Bence", ref: "IEH-2026-046", version: 1, date: "2026-11-06",
       type: "m145", variant: "Antracit", location: "Algyő",
       note: "Hőszivattyúval; a 2 állásos garázs az alapár része.",

@@ -6,6 +6,14 @@
   var NB = " ";
   var MONTHS = ["január", "február", "március", "április", "május", "június", "július", "augusztus", "szeptember", "október", "november", "december"];
   var GROUPS = ["garage", "heat", "walls", "tile", "winColor", "hrv", "roomCtl", "mirror", "custom"];
+  var CUST_GROUPS = ["garage", "heat", "walls", "tile", "winColor", "hrv", "roomCtl", "custom"];
+  // Felmérés-csoportok: melyik mezők tartoznak egy árhatáshoz.
+  var SGK = { terep: ["terep"], feltoltes: ["feltoltes"], bontas: ["bontas"], fa: ["fa"], hozzaferes: ["truck"], daru: ["daru"],
+    szak: ["szak"], alapozas: ["alapozas", "csereM3"], talajviz: ["talajviz"],
+    viz: ["viz", "dist"], csatorna: ["csatorna", "dist"], villany: ["villany", "dist"], gaz: ["gaz", "dist"] };
+  var SG = Object.keys(SGK);
+  function getSurvey(offer) { return offer.survey || D.survey.defaults; }
+  function utilLen(s, u) { return u.fm != null && u.fm !== "" ? +u.fm : (+s.dist || 0); }
   var CHMAP = {};
   D.chapters.forEach(function (c) { CHMAP[c[0]] = c[1]; });
   var BASE_CH = {}, BASE_QTY = {};
@@ -110,6 +118,36 @@
         var r = mkRow(P, a[0], a[1], a[2], a[3], "removed", "Az alapár 1 állásos garázsa", g); r.key = "m:" + a[1] + ":" + r.name; r.virtual = true; rows.push(r);
       });
     });
+    // Helyszíni felmérés sorai (külön címkével: "felmérésből: …").
+    var s = getSurvey(offer), SV = D.survey;
+    var srow = function (ch, it, qty, tag, grp) {
+      if (!(qty > 0)) return;
+      var r = mkRow(P, ch, it, qty, null, "added", tag, grp); r.survey = true; r.key = "s:" + it; rows.push(r);
+    };
+    if (s.terep === "enyhe") srow("02", "sv_lejto_e", 1, "felmérésből: enyhe lejtő", "terep");
+    if (s.terep === "lejtos") { srow("02", "sv_lejto_l", 1, "felmérésből: lejtős telek", "terep"); srow("03", "sv_labazat", SV.labazatFm, "felmérésből: lejtős telek", "terep"); }
+    srow("02", "sv_feltoltes", +s.feltoltes, "felmérésből: feltöltés", "feltoltes");
+    srow("01", "sv_bontas", +s.bontas, "felmérésből: bontandó épület", "bontas");
+    srow("02", "sv_fa", +s.fa, "felmérésből: fakivágás", "fa");
+    if (!s.truck) srow("01", "sv_szuk", 1, "felmérésből: szűk bejárás", "hozzaferes");
+    srow("01", "sv_daru", +s.daru, "felmérésből: daru", "daru");
+    if (s.szak === "nincs") srow("01", "sv_szakv", 1, "felmérésből: nincs szakvélemény", "szak");
+    else {
+      if (s.alapozas === "lemez") srow("03", "sv_lemez", SV.lemezM2, "felmérésből: lemezalap", "alapozas");
+      if (s.alapozas === "csere") srow("03", "sv_csere", +s.csereM3, "felmérésből: talajcsere", "alapozas");
+    }
+    if (s.talajviz) srow("03", "sv_talajviz", SV.talajvizM2, "felmérésből: talajvíz", "talajviz");
+    if (s.viz.mode === "vallaljuk") srow("18", "sv_viz", utilLen(s, s.viz), "vállalt bekötés: víz", "viz");
+    if (s.csatorna.mode === "vallaljuk") {
+      srow("18", "sv_csat", utilLen(s, s.csatorna), "vállalt bekötés: csatorna", "csatorna");
+      if (s.csatorna.type === "egyedi") srow("18", "sv_egyedi", 1, "vállalt: egyedi szennyvízkezelés", "csatorna");
+    }
+    if (s.villany.mode === "vallaljuk") {
+      srow("18", "sv_vill", utilLen(s, s.villany), "vállalt bekötés: villany", "villany");
+      if (s.villany.bovites) srow("18", "sv_bovites", 1, "vállalt: 3 fázis bővítés", "villany");
+    }
+    if (o.heat !== "hp" && s.gaz.van && s.gaz.mode === "vallaljuk") srow("18", "sv_gaz", utilLen(s, s.gaz), "vállalt bekötés: gáz", "gaz");
+
     if (tileOn(o)) {
       var diff = o.tilePrice - D.tile.allowance, q = o.tileArea * (1 + D.tile.waste);
       rows.push({ ch: "13", item: null, key: "tile", name: "Hidegburkolat: keret feletti különbözet (választott lap bruttó " + fInt(o.tilePrice) + " Ft/m²)",
@@ -119,7 +157,7 @@
       var nr = mkRow(P, "13", D.tile.largeLabourItem, o.tileArea, null, "added", "Nagyméretű lap", "tile"); nr.key = "nagylap"; rows.push(nr);
     }
     (o.custom || []).forEach(function (c, i) {
-      rows.push({ ch: "18", item: null, key: "c:" + i + ":" + c.name, name: c.name || "Egyedi tétel", unit: c.unit || "db", qty: +c.qty || 0,
+      rows.push({ ch: "19", item: null, key: "c:" + i + ":" + c.name, name: c.name || "Egyedi tétel", unit: c.unit || "db", qty: +c.qty || 0,
         a: +c.price || 0, d: 0, status: "added", tag: "Egyedi tétel", group: "custom", noMarkup: true, custom: true });
     });
     rows.forEach(function (r) { r.matT = rnd(r.qty * r.a); r.labT = rnd(r.qty * r.d); });
@@ -152,20 +190,31 @@
   }
 
   // Vezérlőnkénti hatás: a módosításokat sorban rakja rá az alapra, így az összegük pontosan a pótmunkák összege.
+  // Először az ügyfél kérései, utána a felmérés csoportjai (így pl. a gáz-bekötés már látja, hogy hőszivattyú van).
   function effects(offer, P) {
-    var o = defaultOpts(offer.type), out = {};
-    var prev = build({ type: offer.type, opts: o }, P).total;
+    var o = defaultOpts(offer.type), s = clone(D.survey.defaults), src = getSurvey(offer), out = {};
+    var calc = function () { return build({ type: offer.type, opts: o, survey: s }, P).total; };
+    var prev = calc();
     GROUPS.forEach(function (g) {
       o = applyGroup(o, offer.opts, g);
-      var t = build({ type: offer.type, opts: o }, P).total;
-      out[g] = t - prev; prev = t;
+      var t = calc(); out[g] = t - prev; prev = t;
     });
+    SG.forEach(function (g) {
+      SGK[g].forEach(function (k) { s[k] = clone(src[k]); });
+      var t = calc(); out[g] = t - prev; prev = t;
+    });
+    out.surveySum = SG.reduce(function (a, g) { return a + out[g]; }, 0) + out.mirror;
+    out.custSum = CUST_GROUPS.reduce(function (a, g) { return a + out[g]; }, 0);
     return out;
   }
 
-  function openItems(o) {
+  function openItems(offer) {
+    var o = offer.opts, s = getSurvey(offer);
     return D.openItems.filter(function (x) {
       return x.when === "always" || (x.when === "hp" && o.heat === "hp") ||
+        (x.when === "noSoilReport" && s.szak === "nincs") ||
+        (x.when === "septic" && s.csatorna.type === "egyedi") ||
+        (x.when === "demolition" && +s.bontas > 0) ||
         (x.when === "tileUnknown" && o.tileSize === "unknown" && o.tileArea > 0) ||
         (x.when === "tileBig" && o.tileSize === "big" && o.tileArea > 0);
     });
@@ -205,7 +254,7 @@
   }
 
   // ---------- állapot ----------
-  var KEY = "iehTipushazKalkulator.v1";
+  var KEY = "iehTipushazKalkulator.v2";
   var state = { offers: clone(D.offers), currentId: "kovacs-v2", prices: {}, screen: "tipus",
     internal: false, onlyChanges: false, collapsed: {}, howOpen: false, outTab: "offer", cmpA: null, cmpB: null,
     plSearch: "", plEdit: null, mail: { open: false, applied: false } };
@@ -236,7 +285,7 @@
       return '<option value="' + esc(o.id) + '"' + (o.id === state.currentId ? " selected" : "") + ">" + esc(offerLabel(o)) + "</option>";
     }).join("");
     var o = cur(), b = build(o);
-    var steps = [["tipus", "Típus"], ["mod", "Módosítások"], ["kv", "Költségvetés"], ["arlista", "Árlista"], ["ki", "Kimenetek"]];
+    var steps = [["tipus", "Típus"], ["felmeres", "Felmérés"], ["mod", "Ügyfél kérései"], ["kv", "Költségvetés"], ["arlista", "Árlista"], ["ki", "Kimenetek"]];
     document.getElementById("steps").innerHTML = steps.map(function (s, i) {
       return '<button data-act="go" data-v="' + s[0] + '"' + (state.screen === s[0] ? ' aria-current="page"' : "") + '><span class="n">' + (i + 1) + "</span>" + s[1] + "</button>";
     }).join("") + '<div class="ctx">' + esc(o.customer) + " · " + typeName(o.type) + " · v" + o.version + " · <b>" + fFt(b.total) + "</b> + ÁFA</div>";
@@ -267,7 +316,7 @@
     var note = h.detailed ? "" :
       '<div class="note" style="margin-top:14px">A részletes költségvetés ehhez a típushoz élesben kerül feltöltésre. A bemutatóban az alapár a közölt ár, a módosítások a 120-as típus mintasoraival számolnak.</div>';
     return head("Típus", "Válassza ki a típusházat. Az alapár, az alapterület és a műszaki tartalom a weboldalon közölt típusház-leírásokból származik.",
-        '<button class="btn primary" data-act="go" data-v="mod">Tovább: Módosítások →</button>') +
+        '<button class="btn primary" data-act="go" data-v="felmeres">Tovább: Felmérés →</button>') +
       '<div class="types">' + cards + "</div>" + note +
       '<div class="s1-bottom">' +
       '<div class="card"><h3 style="font-size:16px;margin-bottom:12px">Ajánlat adatai</h3><div class="form-grid">' +
@@ -328,6 +377,145 @@
     }).join("") + "</table><p>A szabály a műszaki leírásból: a keretig az alapár része, felette csak a különbözetet számoljuk fel. Átadott ár: rezsi és haszon nem kerül rá.</p></div>";
   }
 
+  // ---------- 2. Felmérés ----------
+  var TEREP = { sik: "sík telek", enyhe: "enyhén lejtős telek", lejtos: "lejtős telek" };
+  var ALAP = { sav: "sávalap (alap)", furt: "fúrt alap (alap)", lemez: "lemezalap", csere: "talajcsere" };
+
+  function hpPowerNote(o) {
+    if (o.opts.heat !== "hp") return "";
+    var s = getSurvey(o), v = s.villany;
+    if (v.phase === "1" && !v.bovites)
+      return '<div class="warn">A felmérés szerint a telken 1 fázis van, bővítés nincs jelölve – a hőszivattyúhoz 3 fázis kell (Felmérés → Közművek → Villany).</div>';
+    if (!o.survey) return "";
+    return '<div class="warn info">Felmérés: villany ' + (v.phase === "3" ? "3 fázis" : "1 fázis, 3 fázisra bővítés jelölve") + "; gázbekötés nem kell.</div>";
+  }
+
+  // A felmérés árazott hatásai, olvasható formában (összesítő, ügyfélajánlat).
+  function surveyLines(o, ef) {
+    var s = getSurvey(o), out = [], P = function (g, short, long) { if (ef[g]) out.push({ short: short, long: long || short, amt: ef[g] }); };
+    P("terep", s.terep === "lejtos" ? "Lejtős telek" : "Enyhe lejtő", s.terep === "lejtos" ? "Lejtős telek: földmunka-többlet, lábazat magasítása" : "Enyhe lejtő: tükörképzés, földmunka-többlet");
+    P("feltoltes", "Feltöltés " + fDec(+s.feltoltes) + " m³", "Feltöltés, terepszint-emelés: " + fDec(+s.feltoltes) + " m³");
+    P("bontas", "Bontás " + fDec(+s.bontas) + " m²", "Meglévő épület bontása: " + fDec(+s.bontas) + " m²");
+    P("fa", "Fakivágás " + fDec(+s.fa) + " db", "Fa kivágása, tuskó kiszedése: " + fDec(+s.fa) + " db");
+    P("hozzaferes", "Szűk bejárás", "Szűk bejárás: kézi anyagmozgatás többlete");
+    P("daru", "Daru " + fDec(+s.daru) + " nap", "Autódaru a födémhez és a tetőhöz: " + fDec(+s.daru) + " nap");
+    P("szak", "Talajmechanikai szakvélemény", "Talajmechanikai szakvélemény megrendelése (javasolt)");
+    P("alapozas", s.alapozas === "lemez" ? "Lemezalap-többlet" : "Talajcsere " + fDec(+s.csereM3) + " m³",
+      s.alapozas === "lemez" ? "Lemezalap a szakvélemény szerint (többlet a sávalaphoz képest)" : "Talajcsere a szakvélemény szerint: " + fDec(+s.csereM3) + " m³");
+    P("talajviz", "Talajvíz: szigetelés-többlet", "Talajvíz miatti szigetelés-többlet");
+    P("viz", "Vízbekötés " + fDec(utilLen(s, s.viz)) + " fm", "Vízbekötés a mérőtől a házig: " + fDec(utilLen(s, s.viz)) + " fm (vállalt)");
+    P("csatorna", "Csatornabekötés " + fDec(utilLen(s, s.csatorna)) + " fm", "Szennyvíz-bekötés: " + fDec(utilLen(s, s.csatorna)) + " fm" + (s.csatorna.type === "egyedi" ? ", egyedi szennyvízkezelővel" : ", közcsatornára") + " (vállalt)");
+    P("villany", "Villanybekötés " + fDec(utilLen(s, s.villany)) + " fm" + (s.villany.bovites ? ", 3 fázis" : ""), "Villanybekötés a mérőhelytől: " + fDec(utilLen(s, s.villany)) + " fm" + (s.villany.bovites ? ", bővítés 3 fázisra" : "") + " (vállalt)");
+    P("gaz", "Gázbekötés " + fDec(utilLen(s, s.gaz)) + " fm", "Gázbekötés a mérőtől a házig: " + fDec(utilLen(s, s.gaz)) + " fm (vállalt)");
+    if (o.opts.mirror) out.push({ short: "Tükrözött alaprajz", long: "Tükrözött alaprajz (tervmódosítás)", text: "díjmentes", amt: 0 });
+    return out;
+  }
+
+  // Mit talált a felmérés (ajánlat "Helyszíni adottságok" blokkja).
+  function surveyFacts(o) {
+    if (!o.survey) return [];
+    var s = o.survey, hp = o.opts.heat === "hp", f = [];
+    var telek = [s.telepules, s.hrsz ? "hrsz. " + s.hrsz : "", TEREP[s.terep],
+      +s.feltoltes ? fDec(+s.feltoltes) + " m³ feltöltés" : "", +s.bontas ? fDec(+s.bontas) + " m² bontandó épület" : "", +s.fa ? fDec(+s.fa) + " kivágandó fa" : ""].filter(Boolean);
+    f.push("Telek: " + telek.join(", "));
+    f.push("Megközelítés: " + (s.truck ? "teherautóval bejárható" : "szűk bejárás, kézi anyagmozgatás") + (+s.daru ? ", daru " + fDec(+s.daru) + " napra" : ", daru nem kell"));
+    f.push("Talaj: " + (s.szak === "van" ? "szakvélemény megvan, " + ALAP[s.alapozas].replace(" (alap)", "") : "talajmechanikai szakvélemény még nincs") + ", talajvíz " + (s.talajviz ? "van" : "nincs"));
+    var u = [];
+    var ut = function (name, x, extra) { u.push(name + (extra || "") + ": " + (x.mode === "vallaljuk" ? "a bekötést vállaljuk" : "az ügyfél intézi")); };
+    ut("víz", s.viz); ut("csatorna", s.csatorna, s.csatorna.type === "egyedi" ? " (egyedi szennyvízkezelés)" : " (közcsatorna)");
+    ut("villany", s.villany, " (" + s.villany.phase + " fázis" + (s.villany.bovites ? ", bővítés kell" : "") + ")");
+    if (hp) u.push("gáz: nem kell (hőszivattyú)"); else if (!s.gaz.van) u.push("gáz: nincs a telekhatáron"); else ut("gáz", s.gaz);
+    f.push("Közművek: " + u.join("; "));
+    if (+s.dist) f.push("Elhelyezés: a ház az úttól " + fDec(+s.dist) + " m-re" + (o.opts.mirror ? ", tükrözött alaprajzzal" : ""));
+    return f;
+  }
+
+  var SV_LBL = { feltoltes: "Feltöltés", bontas: "Bontandó épület", fa: "Kivágandó fa", daru: "Daru", csereM3: "Talajcsere",
+    "viz.fm": "Víz bekötés hossza", "csatorna.fm": "Csatorna bekötés hossza", "villany.fm": "Villany bekötés hossza", "gaz.fm": "Gáz bekötés hossza", dist: "A ház távolsága az úttól" };
+  function svGet(s, path) { return path.split(".").reduce(function (a, k) { return a == null ? a : a[k]; }, s); }
+  function svSeg(path, s, options, disabled) {
+    var val = String(svGet(s, path));
+    return '<div class="seg big" role="group">' + options.map(function (op) {
+      return '<button data-act="sv" data-k="' + path + '" data-v="' + op[0] + '" aria-pressed="' + (val === op[0]) + '"' + (disabled ? " disabled" : "") + ">" + op[1] + "</button>";
+    }).join("") + "</div>";
+  }
+  function svNum(path, s, unit, ph) {
+    var v = svGet(s, path);
+    return '<label class="numf"><input class="in big n" inputmode="decimal" aria-label="' + (SV_LBL[path] || path) + ', ' + unit + '" data-k="sv-' + path + '" value="' + (v == null || v === 0 ? "" : rawNum(v)) + '" placeholder="' + (ph || "0") + '"><span>' + unit + "</span></label>";
+  }
+  function svText(path, s, ph, type) {
+    return '<input class="in big" type="' + (type || "text") + '" data-k="sv-' + path + '" value="' + esc(svGet(s, path) || "") + '" placeholder="' + (ph || "") + '">';
+  }
+  function effOut(n, alt) {
+    if (alt) return '<span class="chip grey">' + alt + "</span>";
+    return n ? '<span class="effv num">' + fSigned(n) + "</span>" : '<span class="chip grey">nincs hatása</span>';
+  }
+  function frow(label, hint, ctl, eff) {
+    return '<div class="frow"><div class="fl"><div class="lb">' + label + "</div>" + (hint ? '<div class="hint">' + hint + "</div>" : "") + '</div><div class="fc">' + ctl + '</div><div class="fe">' + eff + "</div></div>";
+  }
+
+  function screenFelmeres() {
+    var o = cur(), s = getSurvey(o), P = priceNow(), b = build(o, P), ef = effects(o, P), hp = o.opts.heat === "hp";
+    var noSoil = s.szak === "nincs";
+    var mode = function (u) { return svSeg(u + ".mode", s, [["vallaljuk", "Vállaljuk a bekötést"], ["ugyfel", "Az ügyfél intézi"]]); };
+    var utilEff = function (u, g) { return s[u].mode === "vallaljuk" ? effOut(ef[g]) : effOut(0, "az ügyfél intézi · nincs az árban"); };
+    var len = function (u) { return s[u].mode === "vallaljuk" ? svNum(u + ".fm", s, "fm", +s.dist ? "úttól: " + fDec(+s.dist) : "hossz") : ""; };
+    var excl = D.excluded.filter(function (e) { return e.id === "kozmu" || e.id === "bekotes"; }).map(function (e) { return "„" + esc(e.text) + "”"; }).join(" és ");
+
+    var telek = '<section class="card svsec"><h3>1. Telek</h3>' +
+      frow("Település", "", svText("telepules", s, "pl. Kiskundorozsma"), "") +
+      frow("Helyrajzi szám", "", svText("hrsz", s, "hrsz."), "") +
+      frow("Terep", "", svSeg("terep", s, [["sik", "sík"], ["enyhe", "enyhe lejtő"], ["lejtos", "lejtős"]]), effOut(ef.terep)) +
+      frow("Feltöltés", "terepszint-emelés", svNum("feltoltes", s, "m³"), effOut(ef.feltoltes)) +
+      frow("Bontandó épület", "0 = nincs", svNum("bontas", s, "m²"), +s.bontas ? effOut(ef.bontas) + ' <span class="chip grey">+ nyitott tétel</span>' : effOut(ef.bontas)) +
+      frow("Kivágandó fa", "", svNum("fa", s, "db"), effOut(ef.fa)) +
+      frow("Megközelíthetőség", "", svSeg("truck", s, [["true", "teherautó bejut"], ["false", "szűk bejárás"]]), effOut(ef.hozzaferes)) +
+      frow("Daru", "0 = nem kell", svNum("daru", s, "nap"), effOut(ef.daru)) + "</section>";
+
+    var talaj = '<section class="card svsec"><h3>2. Talaj, alapozás</h3>' +
+      frow("Talajmechanikai szakvélemény", noSoil ? "Az alapozás nyitott tétel lesz; a szakvélemény megrendelése javasolt sorként bekerül." : "",
+        svSeg("szak", s, [["van", "megvan"], ["nincs", "nincs"]]), noSoil ? effOut(ef.szak) + ' <span class="chip grey">javasolt sor</span>' : effOut(ef.szak)) +
+      frow("Alapozás", noSoil ? "A szakvélemény után dől el." : "Sáv- és fúrt alap az alapár része.",
+        svSeg("alapozas", s, [["sav", "sávalap (alap)"], ["furt", "fúrt (alap)"], ["lemez", "lemezalap"], ["csere", "talajcsere"]], noSoil) +
+        (!noSoil && s.alapozas === "csere" ? svNum("csereM3", s, "m³") : ""),
+        noSoil ? effOut(0, "nyitott tétel") : effOut(ef.alapozas)) +
+      frow("Talajvíz", "", svSeg("talajviz", s, [["false", "nem"], ["true", "igen"]]), effOut(ef.talajviz)) + "</section>";
+
+    var kozmu = '<section class="card svsec"><h3>3. Közművek</h3>' +
+      '<div class="note grey" style="margin-bottom:6px">A műszaki leírás szerint a kulcsrakész ár nem tartalmazza: ' + excl + '. Árazott sor csak a „Vállaljuk a bekötést” jelöléssel kerül az ajánlatba; az ajánlaton a kivétel szövege megmarad.</div>' +
+      frow("Víz", "", mode("viz") + len("viz"), utilEff("viz", "viz")) +
+      frow("Csatorna", "", svSeg("csatorna.type", s, [["kozcsat", "közcsatorna"], ["egyedi", "egyedi szennyvízkezelés"]]) + mode("csatorna") + len("csatorna"),
+        utilEff("csatorna", "csatorna") + (s.csatorna.type === "egyedi" ? ' <span class="chip grey">+ nyitott tétel</span>' : "")) +
+      frow("Villany", hp ? "Hőszivattyúhoz 3 fázis kell." : "",
+        svSeg("villany.phase", s, [["1", "1 fázis"], ["3", "3 fázis"]]) +
+        '<button class="tog" data-act="svToggle" data-k="villany.bovites" aria-pressed="' + !!s.villany.bovites + '"><span class="sw"></span>bővítés kell</button>' +
+        mode("villany") + len("villany"),
+        utilEff("villany", "villany")) +
+      (hp && s.villany.phase === "1" && !s.villany.bovites ? '<div class="warn">Hőszivattyú mellett 3 fázis kell: jelölje a bővítést, vagy egyeztessen az ügyféllel.</div>' : "") +
+      frow("Gáz", hp ? "" : "Van a telekhatáron?",
+        hp ? '<span class="muted">Nem kell – hőszivattyús fűtés (Ügyfél kérései)</span>' :
+          '<button class="tog" data-act="svToggle" data-k="gaz.van" aria-pressed="' + !!s.gaz.van + '"><span class="sw"></span>van a telekhatáron</button>' + (s.gaz.van ? mode("gaz") + len("gaz") : ""),
+        hp || !s.gaz.van ? effOut(0) : utilEff("gaz", "gaz")) + "</section>";
+
+    var hely = '<section class="card svsec"><h3>4. Elhelyezés</h3>' +
+      frow("A ház távolsága az úttól", "a bekötések hosszának alapértéke", svNum("dist", s, "m"), +s.dist ? '<span class="chip grey">közműhossz: ' + fDec(+s.dist) + " fm</span>" : effOut(0)) +
+      frow("Tükrözött alaprajz", "A telekhez igazítva; a tervet módosítani kell.",
+        '<button class="tog" data-act="toggle" data-k="mirror" aria-pressed="' + !!o.opts.mirror + '"><span class="sw"></span>tükrözve</button>',
+        o.opts.mirror ? '<span class="chip grey">0 Ft · tervmódosítás sor</span>' : effOut(0)) + "</section>";
+
+    var megj = '<section class="card svsec"><h3>5. Megjegyzés a felmérésről</h3>' +
+      '<textarea class="in big" rows="4" data-k="sv-megj" placeholder="Amit a helyszínen látott…">' + esc(s.megj || "") + "</textarea>" +
+      '<div class="frow2"><label class="field">Felmérést végezte' + svText("vegezte", s, "név") + '</label><label class="field">Dátum' + svText("datum", s, "", "date") + "</label></div></section>";
+
+    var none = o.survey ? "" : '<div class="note" style="margin-bottom:12px">Ehhez az ajánlathoz még nincs rögzített felmérés. Bármelyik mező kitöltésével elindul.</div>';
+    return head("Felmérés", "A kolléga a helyszínen (telefonon, tableten) vagy utána az irodában beírja, amit látott. Minden válasz sorokká válik a költségvetésben, mintaárral.",
+        '<button class="btn primary" data-act="goOffer">Ajánlat kész → Ügyfélajánlat</button>') + none +
+      '<div class="s2"><div class="opts">' + telek + talaj + kozmu + hely + megj +
+      '<div class="card svdone"><div><b>Felmérés kész?</b><div class="muted small">A tételes költségvetés és az ügyfélajánlat már elkészült belőle.</div></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="go" data-v="mod">Tovább: Ügyfél kérései →</button><button class="btn primary" data-act="goOffer">Ajánlat kész → Ügyfélajánlat</button></div></div>' +
+      "</div>" + summaryCard(o, b, ef, "survey") + "</div>";
+  }
+
   function screenMod() {
     var o = cur(), x = o.opts, P = priceNow(), b = build(o, P), ef = effects(o, P), h = D.houses[o.type];
     var order = { none: 0, "1": 1, "2": 2 };
@@ -339,7 +527,7 @@
         seg("garage", x.garage, [["none", "nincs"], ["1", "1 állásos"], ["2", "2 állásos"]], function (v) { return order[v] < order[h.garage]; }), ef.garage),
       optCard(o, "heat", "Fűtés", "Az alapár része a BAXI 24 kW kondenzációs gázkazán. Hőszivattyú pótmunkaként kérhető.",
         seg("heat", x.heat, [["gas", "gázkazán (alap)"], ["hp", "levegő-víz hőszivattyú"]]), ef.heat,
-        hpSplit ? { effSub: fSigned(hpSplit.add) + " · " + fSigned(-hpSplit.rem) } : null),
+        { effSub: hpSplit ? fSigned(hpSplit.add) + " · " + fSigned(-hpSplit.rem) : "", after: hpPowerNote(o) }),
       optCard(o, "walls", "Válaszfalak", "Az alapár gipszkarton válaszfallal számol. Tégla válaszfal 10-es falazóelemből pótmunkaként kérhető.",
         seg("walls", x.walls, [["gk", "gipszkarton (alap)"], ["brick", "tégla, 10-es falazóelem"]]), ef.walls),
       optCard(o, "tile", "Hidegburkolat", "Keret: bruttó " + fInt(D.tile.allowance) + " Ft/m² + " + fPct(D.tile.waste) + " vágási veszteség. A keret felett csak a különbözetet számoljuk fel.",
@@ -355,7 +543,6 @@
       optCard(o, "winColor", "Nyílászárók színezése", "Az alapár fehér, 6 légkamrás, 3 rétegű üvegezésű nyílászárókkal számol.", tog("winColor", x.winColor, "külső és belső színezés"), ef.winColor),
       optCard(o, "hrv", "Hővisszanyerős szellőzés", "Az alapárban elszívás van az ablak nélküli helyiségekben.", tog("hrv", x.hrv, "központi, hővisszanyerős"), ef.hrv),
       optCard(o, "roomCtl", "Fűtésszabályozás", "Az alapárban hordozható termosztát van.", tog("roomCtl", x.roomCtl, "helyiségenkénti szabályozás"), ef.roomCtl),
-      optCard(o, "mirror", "Tükrözött alaprajz", "A telekhez igazítva. Ár nincs, de a tervet módosítani kell.", tog("mirror", x.mirror, "tükrözve"), ef.mirror),
       optCard(o, "custom", "Egyedi tétel", "Bármi, ami nincs a listában. Nettó eladási árral, kézzel.",
         '<div style="display:grid;gap:8px;width:100%">' + (x.custom || []).map(function (c, i) {
           return '<div class="custom-row"><input class="in" placeholder="Megnevezés" data-k="cust-' + i + '-name" value="' + esc(c.name) + '">' +
@@ -367,9 +554,9 @@
         }).join("") + '<div><button class="btn sm" data-act="custAdd">+ Egyedi tétel</button></div></div>', ef.custom)
     ].join("");
 
-    return head("Módosítások", "Minden módosítás a költségvetés sorait változtatja: mit vesz ki, mit tesz hozzá. Az összeg azonnal frissül.",
+    return head("Ügyfél kérései", "Amit az ügyfél a műszaki leíráshoz képest másképp kér. Minden kérés a költségvetés sorait változtatja: mit vesz ki, mit tesz hozzá. Az összeg azonnal frissül.",
         '<button class="btn primary" data-act="go" data-v="kv">Tovább: Költségvetés →</button>') +
-      '<div class="s2"><div class="opts">' + mailCard() + cards + "</div>" + summaryCard(o, b, ef) + "</div>";
+      '<div class="s2"><div class="opts">' + mailCard() + cards + "</div>" + summaryCard(o, b, ef, "cust") + "</div>";
   }
 
   function mailCard() {
@@ -388,18 +575,25 @@
       (st.open ? '<div class="mailbody">' + body + "</div>" + log : "") + "</div>";
   }
 
-  function summaryCard(o, b, ef) {
-    var lines = changeLines(o, ef);
-    var opens = openItems(o.opts);
+  function summaryCard(o, b, ef, focus) {
+    var lines = changeLines(o, ef), slines = surveyLines(o, ef);
+    var opens = openItems(o);
+    var sub = function (l) { return '<div class="sumrow sub"><span>' + esc(l.short) + '</span><span class="num">' + (l.text || fSigned(l.amt)) + "</span></div>"; };
+    var block = function (title, sum, ls, on) {
+      return '<div class="sumrow sec' + (on ? " on" : "") + '"><span>' + title + '</span><span class="num">' + fSigned(sum) + "</span></div>" +
+        (ls.length ? ls.map(sub).join("") : '<div class="sumrow sub"><span class="muted">nincs tétel</span><span></span></div>');
+    };
+    var parts = [block("Felmérésből", ef.surveySum, slines, focus === "survey"), block("Ügyfél kérései", ef.custSum, lines, focus === "cust")];
+    if (focus === "cust") parts.reverse();
     return '<aside class="summary"><div class="card"><h3>Összesítő</h3>' +
       '<div class="sumrow"><span>' + typeName(o.type) + " típusház, " + esc(o.variant) + '<br><span class="muted small">kulcsrakész alapár</span></span><span class="num">' + fFt(b.base) + "</span></div>" +
-      lines.map(function (l) { return '<div class="sumrow sub"><span>' + esc(l.short) + '</span><span class="num">' + (l.text || fSigned(l.amt)) + "</span></div>"; }).join("") +
-      '<div class="sumrow tot"><span>Pótmunkák összesen</span><span class="num">' + fSigned(b.extras) + "</span></div>" +
+      parts.join("") +
+      '<div class="sumrow tot"><span>Az alapáron felül összesen</span><span class="num">' + fSigned(b.extras) + "</span></div>" +
       '<div class="sumrow"><span>Nyitott tételek <span class="muted small">(nincs az összegben)</span></span><span class="num">' + opens.length + " db</span></div>" +
       '<div class="sumrow big"><span>Nettó</span><span class="num">' + fFt(b.total) + "</span></div>" +
       '<div class="sumrow"><span class="muted">ÁFA ' + fPct(D.vatRate) + '</span><span class="num muted">' + fFt(b.vat) + "</span></div>" +
       '<div class="sumrow gross"><span>Bruttó</span><span class="num">' + fFt(b.gross) + "</span></div>" +
-      '<div class="sumbtns"><button class="btn" data-act="go" data-v="kv">Tételes költségvetés</button><button class="btn primary" data-act="goOffer">Ügyfélajánlat</button></div>' +
+      '<div class="sumbtns"><button class="btn" data-act="go" data-v="kv">Tételes költségvetés</button><button class="btn primary" data-act="goOffer">Ajánlat kész → Ügyfélajánlat</button></div>' +
       "</div></aside>";
   }
 
@@ -417,7 +611,6 @@
     if (ef.winColor) out.push({ short: "Nyílászárók színezése", long: "Nyílászárók külső és belső színezése", amt: ef.winColor });
     if (ef.hrv) out.push({ short: "Hővisszanyerős szellőzés", long: "Hővisszanyerős központi szellőzés", detail: "Az elszívó ventilátorok helyett.", amt: ef.hrv });
     if (ef.roomCtl) out.push({ short: "Helyiségenkénti szabályozás", long: "Helyiségenkénti hőmérséklet-szabályozás", amt: ef.roomCtl });
-    if (x.mirror) out.push({ short: "Tükrözött alaprajz", long: "Tükrözött alaprajz", text: "díjmentes", amt: 0 });
     (x.custom || []).forEach(function (c) {
       var a = rnd((+c.qty || 0) * (+c.price || 0));
       out.push({ short: c.name || "Egyedi tétel", long: c.name || "Egyedi tétel", detail: fDec(+c.qty || 0) + " " + (c.unit || "") + " × " + fFt(+c.price || 0), amt: a });
@@ -430,7 +623,7 @@
   function fAmt(x) { return x ? fInt(x) : "–"; }
 
   function rowHtml(r, detailed) {
-    var cls = r.status === "base" ? "" : r.status;
+    var cls = (r.status === "base" ? "" : r.status) + (r.survey ? " survey" : "");
     var qty = r.qtyOld != null ? '<span class="old">' + fDec(r.qtyOld) + "</span>" + fDec(r.qty) : fDec(r.qty);
     var tag = r.tag ? '<span class="tag">' + (r.status === "removed" ? "kiesik: " : r.status === "changed" ? "módosul: " : "") + esc(r.tag) + "</span>" : "";
     var nm = r.noMarkup ? '<span class="tag nm">' + (r.custom ? "kézi ár" : "átadott ár") + "</span>" : "";
@@ -457,7 +650,7 @@
         (c.N ? "<span>Átadott ár: <b>" + fFt(c.N) + "</b></span>" : "") + "<span>Fejezet eladási ára: <b>" + fFt(c.sell) + "</b></span></span></td></tr>" : "";
       return hd + int + (coll ? "" : rows.map(function (r) { return rowHtml(r, b.detailed); }).join(""));
     }).join("");
-    var opens = openItems(o.opts);
+    var opens = openItems(o);
     var tot = '<table class="tot-table">' +
       '<tr><td>Anyag összesen</td><td class="num">' + fFt(b.mat + b.N) + "</td></tr>" +
       '<tr><td>Díj összesen</td><td class="num">' + fFt(b.lab) + "</td></tr>" +
@@ -479,7 +672,8 @@
       seg("onlyChanges", state.onlyChanges ? "chg" : "all", [["all", "Minden sor"], ["chg", "Csak a változások"]]) +
       '<button class="btn sm" data-act="expandAll">Mind kinyit</button><button class="btn sm" data-act="collapseAll">Mind becsuk</button>' +
       '<span class="sp"></span>' + tog("internal", state.internal, "Belső nézet") + "</div>" +
-      '<div class="legend" style="margin-bottom:10px"><span><i style="background:var(--add-bg);border-color:var(--add-bd)"></i>új sor (módosítás miatt)</span>' +
+      '<div class="legend" style="margin-bottom:10px"><span><i style="background:var(--add-bg);border-color:var(--add-bd)"></i>új sor (ügyfél kérése)</span>' +
+      '<span><i style="background:var(--sv-bg);border-color:var(--sv-bd)"></i>új sor (felmérésből)</span>' +
       '<span><i style="background:var(--rem-bg);border-color:var(--rem-bd)"></i>kieső sor, áthúzva</span>' +
       '<span><i style="background:var(--chg-bg);border-color:var(--chg-bd)"></i>módosult mennyiség: régi → új</span></div>' +
       '<div class="tablewrap"><table class="bt"><thead><tr><th>Tételszám</th><th>Megnevezés</th><th class="num">Menny.</th><th>Egység</th>' +
@@ -499,6 +693,7 @@
       var p = D.packages[k];
       (p.add || []).forEach(function (a) { u[a[1]] = (u[a[1]] || 0) + 1; });
     });
+    Object.keys(D.items).forEach(function (id) { if (id.indexOf("sv_") === 0) u[id] = (u[id] || 0) + 1; });
     return u;
   }
   function impact() {
@@ -549,23 +744,35 @@
   // ---------- 5. Kimenetek ----------
   function offerSheet(o) {
     var b = build(o), ef = effects(o, priceNow()), h = D.houses[o.type], x = o.opts;
-    var lines = changeLines(o, ef), opens = openItems(x);
-    var excl = D.excluded.filter(function (e) { return !(e.dropIf === "hp" && x.heat === "hp"); });
+    var lines = changeLines(o, ef), slines = surveyLines(o, ef), opens = openItems(o), s = getSurvey(o), facts = surveyFacts(o);
+    var taken = { viz: s.viz.mode === "vallaljuk", csatorna: s.csatorna.mode === "vallaljuk", villany: s.villany.mode === "vallaljuk",
+      gaz: x.heat !== "hp" && s.gaz.van && s.gaz.mode === "vallaljuk", bovites: s.villany.mode === "vallaljuk" && !!s.villany.bovites };
+    var UTN = { viz: "víz", csatorna: "szennyvíz", villany: "villany", gaz: "gáz", bovites: "a villany 3 fázisra bővítése (a szolgáltató díja nélkül)" };
+    var excl = D.excluded.filter(function (e) { return !(e.dropIf === "hp" && x.heat === "hp"); }).map(function (e) {
+      var ex = (e.except || []).filter(function (k) { return taken[k]; }).map(function (k) { return UTN[k]; });
+      return esc(e.text) + (ex.length ? ' <span class="d">– kivéve: ' + esc(ex.join(", ")) + "; ezt külön tételként vállaltuk, lásd fent.</span>" : "");
+    });
+    var row = function (l) {
+      return "<tr><td>" + esc(l.long) + (l.detail ? '<div class="d">' + esc(l.detail) + "</div>" : "") + '</td><td class="num">' + (l.text || fSigned(l.amt)) + "</td></tr>";
+    };
+    var subh = function (t, sum) { return '<tr class="sh"><td>' + t + '</td><td class="num">' + fSigned(sum) + "</td></tr>"; };
     var tbl = '<tr><td><b>' + typeName(o.type) + ' típusház, kulcsrakész alapár</b><div class="d">A közölt műszaki leírás szerint.</div></td><td class="num">' + fFt(b.base) + "</td></tr>" +
-      lines.map(function (l) {
-        return "<tr><td>" + esc(l.long) + (l.detail ? '<div class="d">' + esc(l.detail) + "</div>" : "") + '</td><td class="num">' + (l.text || fSigned(l.amt)) + "</td></tr>";
-      }).join("") +
+      (lines.length ? subh("Az Ön kérései", ef.custSum) + lines.map(row).join("") : "") +
+      (slines.length ? subh("Helyszíni adottságok – a felmérés alapján", ef.surveySum) + slines.map(row).join("") : "") +
       '<tr class="g"><td>Nettó összesen</td><td class="num">' + fFt(b.total) + "</td></tr>" +
       '<tr><td>ÁFA ' + fPct(D.vatRate) + '</td><td class="num">' + fFt(b.vat) + "</td></tr>" +
       '<tr class="t"><td>Bruttó összesen</td><td class="num">' + fFt(b.gross) + "</td></tr>";
     return '<div class="sheet"><div class="lh"><img src="logo.png" alt="' + esc(D.company.name) + '"><div class="r"><b>Előzetes ajánlat</b>' + esc(o.ref) + " · " + o.version + ". verzió<br>" + fDate(o.date) + "</div></div>" +
       "<h1>Tisztelt " + esc(o.customer) + "!</h1>" +
-      '<p style="margin:4px 0 0">Köszönjük megkeresését. Az ajánlat a ' + typeName(o.type) + " típusház kulcsrakész műszaki leírására és az Ön által kért módosításokra épül.</p>" +
+      '<p style="margin:4px 0 0">Köszönjük megkeresését. Az ajánlat a ' + typeName(o.type) + " típusház kulcsrakész műszaki leírására, " + (facts.length ? "a helyszíni felmérésre " : "") + "és az Ön által kért módosításokra épül.</p>" +
       "<h2>A ház</h2><div>" + typeName(o.type) + " típusház, " + esc(o.variant) + " kivitel · " + fDec(h.net) + " m² nettó, " + fDec(h.gross) + " m² bruttó alapterület" +
       (h.terrace ? " · terasz " + fDec(h.terrace) + " m²" : "") + " · " + h.rooms + " szoba · " + esc(h.baths) +
       (h.garage !== "none" ? " · " + GARAGE_LBL[h.garage] + " garázs" : "") + (o.location ? " · Helyszín: " + esc(o.location) : "") + "</div>" +
+      (facts.length ? "<h2>Helyszíni adottságok" + (s.datum ? " – felmérés: " + fDate(s.datum) : "") + "</h2><ul>" +
+        facts.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>" +
+        '<div class="d" style="margin-top:3px">Amit ebből árazni lehetett, az alábbi ár „Helyszíni adottságok” részében szerepel; ami még nem árazható, a nyitott kérdések között.</div>' : "") +
       "<h2>Ár</h2><table>" + tbl + "</table>" +
-      '<div class="cols"><div><h2>Az ár nem tartalmazza</h2><ul>' + excl.map(function (e) { return "<li>" + esc(e.text) + "</li>"; }).join("") + "</ul></div>" +
+      '<div class="cols"><div><h2>Az ár nem tartalmazza</h2><ul>' + excl.map(function (e) { return "<li>" + e + "</li>"; }).join("") + "</ul></div>" +
       "<div><h2>Még nyitott kérdések</h2><ul>" + opens.map(function (x2) { return "<li><b>" + esc(x2.label) + ":</b> " + esc(x2.text) + "</li>"; }).join("") +
       '</ul><div class="d" style="margin-top:4px">Ezek nem szerepelnek a fenti összegben.</div>' +
       (x.heat === "hp" ? '<div class="d" style="margin-top:4px">Hőszivattyú mellett gázbekötés és belső gázterv nem szükséges.</div>' : "") + "</div></div>" +
@@ -580,7 +787,7 @@
       b.chs.map(function (c) {
         return '<tr class="chh"><td>' + c.code + '</td><td colspan="5">' + esc(c.name) + '</td><td class="num">' + fInt(c.mat + c.N) + '</td><td class="num">' + fInt(c.lab) + "</td></tr>" +
           c.rows.map(function (r) {
-            return '<tr class="' + (r.status === "base" ? "" : r.status) + '"><td>' + r.tsz + "</td><td>" + esc(r.name) + (r.tag ? " [" + esc(r.tag) + "]" : "") + '</td><td class="num">' + (r.qtyOld != null ? fDec(r.qtyOld) + " → " : "") + fDec(r.qty) + "</td><td>" + esc(r.unit) +
+            return '<tr class="' + (r.status === "base" ? "" : r.status) + (r.survey ? " survey" : "") + '"><td>' + r.tsz + "</td><td>" + esc(r.name) + (r.tag ? " [" + esc(r.tag) + "]" : "") + '</td><td class="num">' + (r.qtyOld != null ? fDec(r.qtyOld) + " → " : "") + fDec(r.qty) + "</td><td>" + esc(r.unit) +
               '</td><td class="num">' + fPrice(r.a) + '</td><td class="num">' + fPrice(r.d) + '</td><td class="num">' + fAmt(r.matT) + '</td><td class="num">' + fAmt(r.labT) + "</td></tr>";
           }).join("");
       }).join("") + "</tbody></table>" +
@@ -641,6 +848,13 @@
       if (!!x[t[0]] !== !!y[t[0]]) p.push((y[t[0]] ? "+ " : "− ") + t[1]);
     });
     if (JSON.stringify(x.custom || []) !== JSON.stringify(y.custom || [])) p.push("egyedi tételek módosulnak");
+    var SGN = { terep: "terep", feltoltes: "feltöltés", bontas: "bontás", fa: "fa", hozzaferes: "bejárás", daru: "daru", szak: "szakvélemény",
+      alapozas: "alapozás", talajviz: "talajvíz", viz: "víz", csatorna: "csatorna", villany: "villany", gaz: "gáz" };
+    var sa = getSurvey(a), sb = getSurvey(b);
+    var sd = SG.filter(function (g) {
+      return SGK[g].filter(function (k) { return k !== "dist"; }).some(function (k) { return JSON.stringify(sa[k]) !== JSON.stringify(sb[k]); });
+    }).map(function (g) { return SGN[g]; });
+    if (sd.length) p.push("felmérés: " + sd.join(", "));
     return p;
   }
   function compareHtml() {
@@ -651,6 +865,7 @@
     var top = '<div class="toolbar"><label class="field">Régi verzió' + sel("cmpA", state.cmpA) + '</label><span style="align-self:flex-end;padding-bottom:8px">→</span><label class="field">Új verzió' + sel("cmpB", state.cmpB) + "</label></div>";
     if (!A || !B) return top;
     var ba = build(A), bb = build(B), d = bb.total - ba.total, parts = diffParts(A, B);
+    var ea = effects(A, priceNow()), eb = effects(B, priceNow());
     var eff = function (r) { return r.status === "removed" ? null : r; };
     var ma = {}, mb = {}, keys = [];
     var add = function (m, r) { if (!eff(r)) return; m[r.key] = r; if (keys.indexOf(r.key) < 0) keys.push(r.key); };
@@ -667,14 +882,16 @@
     var sameType = A.type === B.type && ba.detailed;
     return top +
       '<div class="card" style="margin-bottom:14px"><div class="muted small">' + esc(A.customer) + " · v" + A.version + " → v" + B.version + '</div><div class="cmp-head">' + esc(parts.length ? parts.join(", ") : "nincs eltérés a módosításokban") + ': <span class="num">' + fSigned(d) + "</span> nettó</div>" +
-      '<div class="muted">v' + A.version + ": " + fFt(ba.total) + " → v" + B.version + ": " + fFt(bb.total) + " · " + diffs.length + " sor változik</div></div>" +
+      '<div class="muted">v' + A.version + ": " + fFt(ba.total) + " → v" + B.version + ": " + fFt(bb.total) + " · " + diffs.length + " sor változik</div>" +
+      (A.type === B.type ? '<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap"><span class="chip add">Ügyfél kérései: ' + fSigned(eb.custSum - ea.custSum) + '</span><span class="chip sv">Felmérésből: ' + fSigned(eb.surveySum - ea.surveySum) + "</span></div>" : "") +
+      "</div>" +
       '<div class="grid2" style="margin-bottom:14px">' + [A, B].map(function (o, i) {
         return '<div class="card"><div class="muted small">' + (i ? "Új" : "Régi") + " · v" + o.version + " · " + fDate(o.date) + "</div><div style=\"margin-top:4px\">" + esc(optSummary(o).join(" · ")) + "</div>" +
           (o.note ? '<div class="muted small" style="margin-top:6px">' + esc(o.note) + "</div>" : "") + "</div>";
       }).join("") + "</div>" +
       '<div class="tablewrap"><table class="cmp"><thead><tr><th>Fejezet</th><th>Megnevezés</th><th>Változás</th><th class="num">v' + A.version + ' menny.</th><th class="num">v' + B.version + ' menny.</th><th>Egység</th><th class="num">Különbség (közvetlen / átadott)</th></tr></thead><tbody>' +
       diffs.map(function (x) {
-        return '<tr class="' + x.st + '"><td>' + x.r.ch + "</td><td>" + esc(x.r.name) + (x.r.tag ? ' <span class="muted small">· ' + esc(x.r.tag) + "</span>" : "") + "</td><td>" + STL[x.st] + '</td><td class="num">' + (x.qa == null ? "–" : fDec(x.qa)) + '</td><td class="num">' + (x.qb == null ? "–" : fDec(x.qb)) + "</td><td>" + esc(x.r.unit) + '</td><td class="num">' + fSigned(x.d) + "</td></tr>";
+        return '<tr class="' + x.st + (x.r.survey && x.st === "added" ? " survey" : "") + '"><td>' + x.r.ch + "</td><td>" + esc(x.r.name) + (x.r.tag ? ' <span class="muted small">· ' + esc(x.r.tag) + "</span>" : "") + "</td><td>" + STL[x.st] + '</td><td class="num">' + (x.qa == null ? "–" : fDec(x.qa)) + '</td><td class="num">' + (x.qb == null ? "–" : fDec(x.qb)) + "</td><td>" + esc(x.r.unit) + '</td><td class="num">' + fSigned(x.d) + "</td></tr>";
       }).join("") + "</tbody>" +
       '<tfoot><tr><td></td><td colspan="5">Sorok különbsége összesen</td><td class="num">' + fSigned(dsum) + "</td></tr>" +
       (sameType ? '<tr><td></td><td colspan="5" style="font-weight:500">+ rezsi és haszon a sorokra, fejezetenként</td><td class="num" style="font-weight:500">' + fSigned(d - dsum) + "</td></tr>" : "") +
@@ -706,19 +923,30 @@
   }
 
   // ---------- megjelenítés ----------
-  var SCREENS = { tipus: screenTipus, mod: screenMod, kv: screenKv, arlista: screenArlista, ki: screenKi };
+  var SCREENS = { tipus: screenTipus, felmeres: screenFelmeres, mod: screenMod, kv: screenKv, arlista: screenArlista, ki: screenKi };
   function render() {
     var ae = document.activeElement, fk = ae && ae.getAttribute && ae.getAttribute("data-k"), fv = null, ss = null, se = null;
-    if (fk && ae.tagName === "INPUT") { fv = ae.value; try { ss = ae.selectionStart; se = ae.selectionEnd; } catch (e) { } }
+    var txt = function (n) { return n && (n.tagName === "INPUT" || n.tagName === "TEXTAREA"); };
+    if (fk && txt(ae)) { fv = ae.value; try { ss = ae.selectionStart; se = ae.selectionEnd; } catch (e) { } }
     renderTop();
     document.getElementById("screen").innerHTML = SCREENS[state.screen]();
     if (fk) {
       var el = document.querySelector('#app [data-k="' + fk + '"]');
-      if (el && el.tagName === "INPUT") {
+      if (txt(el)) {
         el.focus(); if (fv != null) el.value = fv;
         try { if (ss != null) el.setSelectionRange(ss, se); } catch (e) { }
       }
     }
+  }
+
+  // Felmérés mező írása (pl. "viz.mode"); az első módosítás rögzíti a felmérést az ajánlaton.
+  function setSv(path, v, noRender) {
+    var o = cur();
+    if (!o.survey) o.survey = clone(D.survey.defaults);
+    var ks = path.split("."), obj = o.survey;
+    for (var i = 0; i < ks.length - 1; i++) obj = obj[ks[i]];
+    obj[ks[ks.length - 1]] = v;
+    save(); if (noRender) renderTop(); else render();
   }
 
   function setOpt(k, v) {
@@ -748,6 +976,8 @@
         if (k === "internal") { state.internal = !state.internal; render(); }
         else setOpt(k, !o.opts[k]);
         break;
+      case "sv": setSv(k, v === "true" ? true : v === "false" ? false : v); break;
+      case "svToggle": setSv(k, !svGet(getSurvey(o), k)); break;
       case "how": state.howOpen = !state.howOpen; render(); break;
       case "custAdd": o.opts.custom = o.opts.custom || []; o.opts.custom.push({ name: "", qty: 1, unit: "db", price: 0 }); save(); render(); break;
       case "custDel": o.opts.custom.splice(+v, 1); save(); render(); break;
@@ -805,6 +1035,12 @@
     if (t.id === "offerSel") return;
     var o = cur(), v = t.value, m;
     if (k === "customer" || k === "location" || k === "variant") { o[k] = v; save(); renderTop(); return; }
+    if ((m = k.match(/^sv-(.+)$/))) {
+      var path = m[1];
+      if (/^(telepules|hrsz|megj|vegezte|datum)$/.test(path)) { setSv(path, v, true); return; }
+      if (/\.fm$/.test(path)) { setSv(path, v.trim() === "" ? null : parseNum(v)); return; }
+      setSv(path, parseNum(v)); return;
+    }
     if (k === "tilePrice" || k === "tileArea") { o.opts[k] = parseNum(v); save(); render(); return; }
     if (k === "tileSize") { o.opts.tileSize = v; save(); render(); return; }
     if ((m = k.match(/^cust-(\d+)-(\w+)$/))) {
@@ -819,7 +1055,7 @@
     if (k === "plSearch") { state.plSearch = v; render(); return; }
     if (k === "cmpA" || k === "cmpB") { state[k] = v; render(); return; }
   }
-  document.addEventListener("input", function (e) { if (e.target.tagName === "INPUT") onField(e); });
+  document.addEventListener("input", function (e) { if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") onField(e); });
   document.addEventListener("change", function (e) {
     if (e.target.id === "offerSel") {
       state.currentId = e.target.value; state.mail = { open: false, applied: false }; state.cmpA = state.cmpB = null; save(); render(); return;

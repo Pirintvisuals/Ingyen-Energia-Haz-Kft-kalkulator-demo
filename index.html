@@ -22,6 +22,7 @@
     --rem-bg: #fcefee; --rem-bd: #e8b4b0; --rem-ink: #a23b33;
     --chg-bg: #fff7e0; --chg-bd: #e6c873; --chg-ink: #6f4e00;
     --amber-bg: #fdf6e3; --amber-bd: #e3b857; --amber-ink: #5f4508;
+    --sv-bg: #e7f3f7; --sv-bd: #9ccbdb; --sv-ink: #165a6e;
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
@@ -51,7 +52,8 @@
 
   /* Lépések */
   nav.steps { background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
-  nav.steps .in { max-width: 1480px; margin: 0 auto; padding: 0 24px; display: flex; gap: 4px; overflow-x: auto; }
+  nav.steps .in { max-width: 1480px; margin: 0 auto; padding: 0 24px; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+  nav.steps .in::-webkit-scrollbar { display: none; }
   nav.steps button { border: 0; background: none; padding: 14px 14px 12px; cursor: pointer; display: flex; gap: 9px; align-items: center; border-bottom: 3px solid transparent; white-space: nowrap; color: var(--muted); font-weight: 600; }
   nav.steps button .n { width: 24px; height: 24px; border-radius: 50%; background: #dbe3ea; color: var(--ink); font-size: 12.5px; display: inline-flex; align-items: center; justify-content: center; }
   nav.steps button[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
@@ -136,6 +138,31 @@
   .custom-row .x { border: 0; background: none; cursor: pointer; color: var(--faint); font-size: 18px; }
   .from-mail { font-size: 12.5px; padding: 4px 9px; border-radius: 6px; background: var(--hl); border-left: 3px solid var(--hd); color: var(--ink); }
 
+  /* 2. Felmérés */
+  .svsec { padding: 6px 20px 10px; }
+  .svsec h3 { font-size: 17px; font-weight: 600; padding: 12px 0 8px; }
+  .frow { display: grid; grid-template-columns: 210px minmax(0, 1fr) 190px; gap: 8px 16px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line-2); }
+  .frow .lb { font-weight: 600; font-size: 15px; }
+  .frow .hint { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .frow .fc { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; min-width: 0; }
+  .frow .fe { text-align: right; }
+  .effv { font-size: 17px; font-weight: 700; }
+  .chip.grey { background: #f0f2f4; color: #6b757e; }
+  .chip.sv { background: var(--sv-bg); color: var(--sv-ink); }
+  input.in.big, textarea.in.big { font-size: 16px; padding: 10px 12px; min-height: 44px; }
+  input.in.big:not(.n) { width: 100%; max-width: 360px; }
+  textarea.in.big { width: 100%; resize: vertical; font-family: inherit; }
+  .numf { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+  .numf input { width: 120px; }
+  .seg.big button { padding: 10px 16px; font-size: 15px; min-height: 44px; }
+  .frow .tog { min-height: 44px; font-size: 15px; }
+  .frow2 { display: flex; gap: 14px; flex-wrap: wrap; margin: 12px 0 8px; }
+  .frow2 .field { font-size: 13px; }
+  .frow2 .field input { width: 240px; }
+  .svdone { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; border-color: var(--accent); }
+  .sumrow.sec { font-weight: 600; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--line-2); }
+  .sumrow.sec.on span:first-child { color: var(--accent); }
+
   .summary { position: sticky; top: 64px; display: grid; gap: 12px; }
   .summary .card { padding: 16px 18px; }
   .summary h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
@@ -184,6 +211,8 @@
   table.bt tr.removed td { background: var(--rem-bg); color: var(--rem-ink); }
   table.bt tr.removed td.nm span.t, table.bt tr.removed td.num { text-decoration: line-through; }
   table.bt tr.changed td { background: var(--chg-bg); }
+  table.bt tr.added.survey td, table.cmp tr.added.survey td { background: var(--sv-bg); }
+  tr.added.survey .tag { background: #c6e3ec; color: var(--sv-ink); }
   .old { color: var(--muted); text-decoration: line-through; margin-right: 4px; }
   .tag { display: inline-block; font-size: 11.5px; line-height: 1; padding: 3px 7px; border-radius: 20px; margin-left: 6px; font-weight: 600; white-space: nowrap; vertical-align: 1px; }
   tr.added .tag { background: #c9ead1; color: var(--add-ink); }
@@ -242,6 +271,8 @@
   .sheet td.num { padding-left: 12px; }
   .sheet .d { color: var(--muted); font-size: 11.5px; }
   .sheet tr.t td { font-weight: 700; border-bottom: 0; }
+  .sheet tr.sh td { font-weight: 700; font-size: 11px; color: var(--muted); padding-top: 9px; }
+  .sheet tr.sh td:first-child { text-transform: uppercase; letter-spacing: .05em; }
   .sheet tr.g td { font-size: 16px; font-weight: 700; border-top: 2px solid var(--ink); border-bottom: 0; padding-top: 8px; }
   .sheet ul { margin: 0; padding-left: 16px; }
   .sheet li { margin: 2px 0; }
@@ -280,6 +311,11 @@
     .opt { grid-template-columns: minmax(0, 1fr); padding: 14px; }
     .opt .eff { grid-column: 1; grid-row: auto; text-align: left; }
     .custom-row { grid-template-columns: 1fr 1fr; }
+    .svsec { padding: 4px 14px 8px; }
+    .frow { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    .frow .fe { text-align: left; }
+    .seg.big button { padding: 10px 12px; }
+    .frow2 .field, .frow2 .field input { width: 100%; }
     .custom-row input:first-child { grid-column: 1 / -1; }
     ul.spec { columns: 1; }
     .form-grid { grid-template-columns: minmax(0, 1fr); gap: 4px; }
@@ -299,11 +335,14 @@
     body { background: #fff; }
     #app { display: none !important; }
     #print-area { display: block !important; }
-    .sheet { box-shadow: none; width: auto; min-height: 0; max-width: none; font-size: 10.5px; line-height: 1.35; padding-bottom: 8mm; }
+    .sheet { box-shadow: none; width: auto; min-height: 0; max-width: none; font-size: 10px; line-height: 1.32; padding-bottom: 6mm; }
+    .sheet li { margin: 1px 0; }
+    .sheet .d { font-size: 9.5px; }
+    .sheet tr.sh td { padding-top: 6px; }
     .sheet .lh { margin-bottom: 12px; }
     .sheet h1 { font-size: 17px; }
-    .sheet h2 { margin: 10px 0 4px; font-size: 11px; }
-    .sheet td { padding: 3px 0; }
+    .sheet h2 { margin: 8px 0 3px; font-size: 10.5px; }
+    .sheet td { padding: 2px 0; }
     .sheet tr.g td { font-size: 14px; padding-top: 6px; }
     .sheet .foot { margin-top: 10px; }
     .sheet tr, .sheet li { break-inside: avoid; }
@@ -313,6 +352,7 @@
     .print-budget .num { text-align: right; }
     .print-budget tr.chh td { background: #eef2f6 !important; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .print-budget tr.added td { background: var(--add-bg) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .print-budget tr.added.survey td { background: var(--sv-bg) !important; }
     .print-budget tr.removed td { text-decoration: line-through; color: #a23b33; }
     .print-budget tr { break-inside: avoid; }
   }
@@ -336,7 +376,7 @@
   <main id="screen"></main>
 </div>
 <div id="print-area"></div>
-<script src="data.js?v=2"></script>
-<script src="app.js?v=2"></script>
+<script src="data.js?v=5"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
